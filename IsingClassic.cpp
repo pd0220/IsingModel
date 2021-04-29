@@ -9,12 +9,14 @@
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-// beta * J ~ coupling
-const double betaJ = 20.;
 // spatial size of simulation table (use > 1)
-const int spatialSize = 128;
+const int spatialSize = 50;
 // integration time
-const int time = 300;
+const int time = 15000;
+// thermalisation time
+const int thermTime = 1000;
+// scale for coupling index
+const double scalar = 50.;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -127,8 +129,6 @@ int main(int, char **)
 
     // initialize spins
     Table<int> table = Table<int>(RandSpin, spatialSize);
-    // write table to screen
-    //std::cout << table << std::endl;
 
     // calculate the sign of the energy difference due to a single flip
     auto DeltaE = [&table](int row, int col, int dim) {
@@ -170,30 +170,43 @@ int main(int, char **)
 
     // file
     std::ofstream file;
-    //file.open("test.txt");
-    file.open((std::string)"C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\test.txt");
+    file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\test.txt");
     // simulation
-    int i = 0;
-    while (i < spatialSize * spatialSize * time)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling++)
     {
-        // choose random spin
-        int row = distrInt(gen);
-        int col = distrInt(gen);
-        // random number for flippin
-        double randVal = distrReal(gen);
-        // rate
-        double rate = Rate(row, col, spatialSize, betaJ);
-        if (rate >= randVal)
-            table(row, col) *= -1;
+        // reload table
+        table = Table<int>(RandSpin, spatialSize);
 
-        // write to file
-        if (i % (spatialSize * spatialSize) == 0)
-           WriteToFile(file, table.data);
+        // run for given table
+        int i = 0;
+        while (i < (spatialSize * spatialSize * time))
+        {
+            // choose random spin
+            int row = distrInt(gen);
+            int col = distrInt(gen);
+            // random number for flippin
+            double randVal = distrReal(gen);
+            // rate
+            double rate = Rate(row, col, spatialSize, (double)(iCoupling / 50.));
+            if (rate > randVal)
+                table(row, col) *= -1;
 
-        // new step
-        i++;
+            /*
+            // write to file
+            // time units
+            int iTime = i % (spatialSize * spatialSize);
+            if (iTime == 0 && i > (spatialSize * spatialSize * thermTime))
+            {
+                // configurations
+                WriteToFile(file, table.data);
+            }
+            */
+
+            // new step
+            i++;
+        }
+        // averaging magnetisation
+        file << iCoupling / 50. << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / (spatialSize * spatialSize) << std::endl;
     }
     file.close();
-
-    //std::cout << table << std::endl;
 }
