@@ -5,14 +5,16 @@
 #include <random>
 #include <numeric>
 #include <algorithm>
+#include <cmath>
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-// declaring constant(s)
 // beta * J ~ coupling
-const double betaJ = 2.;
-// spatial size of simulation table
-const int spatialSize = 5;
+const double betaJ = 20.;
+// spatial size of simulation table (use > 1)
+const int spatialSize = 128;
+// integration time
+const int time = 300;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -97,20 +99,101 @@ struct Table
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
+// write to file
+auto WriteToFile = [](auto &file, auto const &data) {
+    for (auto &e : data)
+        file << e << " ";
+    file << "\n";
+};
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------------
+
 // main function
 int main(int, char **)
 {
     // random number generation
     std::random_device rd{};
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> distr(0., 1.);
-    // random generator lambda
-    auto rand = [&distr, &gen]() {
-        return (double)distr(gen) > 0.5 ? 1 : -1;
+    std::uniform_real_distribution<double> distrReal(0., 1.);
+    std::uniform_int_distribution distrInt(0, spatialSize - 1);
+    // random generator lambda for spin initialisation
+    auto RandSpin = [&distrReal, &gen]() {
+        return (double)distrReal(gen) > 0.5 ? 1 : -1;
+    };
+    // random generator lambda for spin flipping
+    auto RandFlip = [&distrReal, &gen]() {
+        return (double)distrReal(gen);
     };
 
     // initialize spins
-    Table table = Table<int>(rand, spatialSize);
+    Table<int> table = Table<int>(RandSpin, spatialSize);
     // write table to screen
-    std::cout << table << std::endl;
+    //std::cout << table << std::endl;
+
+    // calculate the sign of the energy difference due to a single flip
+    auto DeltaE = [&table](int row, int col, int dim) {
+        // spin in question
+        int s = table(row, col);
+
+        // periodic boundary conditions
+        int rowRight = (row + 1) % dim;
+        int rowLeft = (row + dim - 1) % dim;
+        int colDown = (col + 1) % dim;
+        int colUp = (col + dim - 1) % dim;
+
+        // neighbours
+        int right = table(rowRight, col);
+        int left = table(rowLeft, col);
+        int down = table(row, colDown);
+        int up = table(row, colUp);
+
+        // quantity proportional to energy difference
+        int energy = s * (up + down + left + right);
+
+        // return sign of difference or zero
+        return (0 < energy) - (energy < 0);
+    };
+
+    // calculate rate
+    auto Rate = [&table, &DeltaE](int row, int col, int dim, double coupling) {
+        // sign of energy difference due to flip
+        int deltaE = DeltaE(row, col, dim);
+
+        // calculate rate
+        if (deltaE < 0)
+            return 1.;
+        else if (deltaE == 0)
+            return 0.5;
+        else
+            return std::exp(-2 * coupling * deltaE);
+    };
+
+    // file
+    std::ofstream file;
+    //file.open("test.txt");
+    file.open((std::string)"C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\test.txt");
+    // simulation
+    int i = 0;
+    while (i < spatialSize * spatialSize * time)
+    {
+        // choose random spin
+        int row = distrInt(gen);
+        int col = distrInt(gen);
+        // random number for flippin
+        double randVal = distrReal(gen);
+        // rate
+        double rate = Rate(row, col, spatialSize, betaJ);
+        if (rate >= randVal)
+            table(row, col) *= -1;
+
+        // write to file
+        if (i % (spatialSize * spatialSize) == 0)
+           WriteToFile(file, table.data);
+
+        // new step
+        i++;
+    }
+    file.close();
+
+    //std::cout << table << std::endl;
 }
