@@ -7,16 +7,18 @@
 #include <numeric>
 #include <string>
 #include "Table.hh"
+// time measurement
+#include <chrono>
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // constants
 // spatial size of simulation table (use > 1)
-const int spatialSize = 40;
+const int spatialSize = 240;
 // integration time
-const int time = 15000;
+const int intTime = 1000;
 // thermalisation time
-const int thermTime = 1000;
+//const int thermTime = 1000;
 // scale for coupling index
 const double scalar = 50.;
 
@@ -77,6 +79,10 @@ int main()
     // file
     std::ofstream file;
     file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\test.txt");
+
+    // vector of time measurements
+    std::vector<double> timeMeasurement(100);
+
     // simulation
     for (int iCoupling = 0; iCoupling < 100; iCoupling++)
     {
@@ -85,9 +91,11 @@ int main()
         // real coupling
         double coupling = (double)(iCoupling / scalar);
 
+        // TIME #0
+        auto start = std::chrono::high_resolution_clock::now();
+
         // run for given table
-        int i = 0;
-        while (i < (sq<int>(spatialSize) * time))
+        for (int i = 0; i < sq<int>(spatialSize) * intTime; i++)
         {
             // choose random spin
             int row = distrInt(gen);
@@ -109,12 +117,18 @@ int main()
                 WriteToFile(file, table.data);
             }
             */
-
-            // new step
-            i++;
         }
+
+        // TIME #1
+        auto stop = std::chrono::high_resolution_clock::now();
+
+        timeMeasurement[iCoupling] = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+
         // averaging magnetisation
         file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq<int>(spatialSize) << std::endl;
     }
     file.close();
+
+    // print computation time
+    std::cout << "Serial computation time : " << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) << " ms." << std::endl;
 }

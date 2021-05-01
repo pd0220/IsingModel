@@ -1,21 +1,28 @@
+// 2D Ising model simulation via Metropolis-Hastings algorithm
+// parallel setup ~ single checkboard: preventing race conditions
+
 // include header(s)
 #include <random>
 #include <cmath>
 #include <numeric>
 #include <string>
 #include "Table.hh"
+// for parallelisation
+#include <thread>
+// time measurement
+#include <chrono>
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // constants
-// spatial size of simulation table (use > 1)
-const int spatialSize = 50;
+// spatial size of simulation table (use > 1 and even)
+const int spatialSize = 240;
 // integration time
-const int time = 15000;
-// thermalisation time
-const int thermTime = 1000;
+const int intTime = 1000;
 // scale for coupling index
 const double scalar = 50.;
+// number of threads (16 in my setup)
+const std::size_t nThread = 8;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -25,43 +32,38 @@ int main()
     // random number generation
     std::random_device rd{};
     std::mt19937 gen(rd());
+    // [0, 1] ~ real
     std::uniform_real_distribution<double> distrReal(0., 1.);
-    std::uniform_int_distribution<int> distrInt(0, spatialSize - 1);
+    // [0, size - 1] ~ integer
+    std::uniform_int_distribution<int> distrInt(0, (int)(spatialSize - 1));
+    // [0, size / 2 - 1] ~ integer
+    std::uniform_int_distribution<int> distrIntSubTableHalf(0, (int)(spatialSize / 2 / nThread - 1));
     // random generator lambda for spin initialisation
-    auto RandSpin = [&distrReal, &gen]() {
-        return (double)distrReal(gen) > 0.5 ? 1 : -1;
-    };
+    auto RandSpin = [&distrReal, &gen]() { return (double)distrReal(gen) > 0.5 ? 1 : -1; };
     // random generator lambda for spin flipping
-    auto RandFlip = [&distrReal, &gen]() {
-        return (double)distrReal(gen);
-    };
+    auto RandFlip = [&distrReal, &gen]() { return (double)distrReal(gen); };
 
     // initialize spins
-    Table<int> table = Table<int>(RandSpin, spatialSize);
+    Table<int> table = Table<int>(spatialSize);
 
     // calculate the sign of the energy difference due to a single flip
-    auto DeltaE = [&table](int row, int col, int dim) {
+    auto DeltaE = [&](int row, int col, int dim) {
         // spin in question
         int s = table(row, col);
-
         // periodic boundary conditions
         int rowRight = (row + 1) % dim, rowLeft = (row + dim - 1) % dim, colDown = (col + 1) % dim, colUp = (col + dim - 1) % dim;
-
         // neighbours
         int right = table(rowRight, col), left = table(rowLeft, col), down = table(row, colDown), up = table(row, colUp);
-
         // quantity proportional to energy difference
         int energy = s * (up + down + left + right);
-
         // return sign of difference or zero
-        return (0 < energy) - (energy < 0);
+        return (int)((0 < energy) - (energy < 0));
     };
 
     // calculate rate
-    auto Rate = [&table, &DeltaE](int row, int col, int dim, double coupling) {
+    auto Rate = [&](int row, int col, int dim, double coupling) {
         // sign of energy difference due to flip
         int deltaE = DeltaE(row, col, dim);
-
         // calculate rate
         if (deltaE < 0)
             return 1.;
@@ -71,9 +73,50 @@ int main()
             return std::exp(-2 * coupling * deltaE);
     };
 
+    // spin flip ~ site visit
+    auto SpinFlip = [&](bool parity, int minRow, double coupling) {
+        // choosing row and column according to parity
+        // col (or row) can be anything
+        int col = distrInt(gen);
+        // initialize row (or col)
+        int row = distrIntSubTableHalf(gen);
+        // even checkboard
+        if (parity == 0)
+            row = ((col % 2) == 0) ? 2 * row : 2 * row + 1;
+        // odd checkboard
+        else
+            row = ((col % 2) == 0) ? 2 * row + 1 : 2 * row;
+        // moving row to appropriate subtable
+        row += minRow * spatialSize / nThread;
+        // random number for flipping
+        double randVal = distrReal(gen);
+        // rate
+        double rate = Rate(row, col, spatialSize, coupling);
+        // flip or not to flip
+        if (rate > randVal)
+            table(row, col) *= -1;
+    };
+
+    // Metroplois sweep
+    auto MetropolisSweep = [&](int minRow, double coupling) {
+        // visit sites
+        // parity: even
+        for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
+            SpinFlip(0, minRow, coupling);
+        // parity: odd
+        for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
+            SpinFlip(1, minRow, coupling);
+    };
+
     // file
     std::ofstream file;
-    file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\test.txt");
+    file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\testCPU.txt");
+
+    // vector of threads
+    std::vector<std::thread> threads(nThread);
+    // vector of time measurements
+    std::vector<double> timeMeasurement(100);
+
     // simulation
     for (int iCoupling = 0; iCoupling < 100; iCoupling++)
     {
@@ -82,36 +125,30 @@ int main()
         // real coupling
         double coupling = (double)(iCoupling / scalar);
 
-        // run for given table
-        int i = 0;
-        while (i < (sq<int>(spatialSize) * time))
+        // TIME #0
+        auto start = std::chrono::high_resolution_clock::now();
+
+        // run Metropolis sweeps
+        for (int iSweep = 0; iSweep < intTime; iSweep++)
         {
-            // choose random spin
-            int row = distrInt(gen);
-            int col = distrInt(gen);
-            // random number for flippin
-            double randVal = distrReal(gen);
-            // rate
-            double rate = Rate(row, col, spatialSize, coupling);
-            if (rate > randVal)
-                table(row, col) *= -1;
-
-            /*
-            // write to file
-            // time units
-            int iTime = i % sq<int>(spatialSize);
-            if (iTime == 0 && i > (sq<int>(spatialSize) * thermTime))
-            {
-                // configurations
-                WriteToFile(file, table.data);
-            }
-            */
-
-            // new step
-            i++;
+            // start threads
+            for (int it = 0; it < nThread; it++)
+                threads[it] = std::thread(MetropolisSweep, it, coupling);
+            // join threads
+            for (auto &t : threads)
+                t.join();
         }
+
+        // TIME #1
+        auto stop = std::chrono::high_resolution_clock::now();
+
+        timeMeasurement[iCoupling] = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+
         // averaging magnetisation
         file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq<int>(spatialSize) << std::endl;
     }
     file.close();
+
+    // print computation time
+    std::cout << "Parrallel computation time with " << nThread << " threads: " << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) << " ms." << std::endl;
 }
