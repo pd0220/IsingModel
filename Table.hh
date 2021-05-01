@@ -1,14 +1,20 @@
+// table sctruct and helper functions for 2D Ising model simulation(s)
+
 // including used libraries
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <algorithm>
 
+// ------------------------------------------------------------------------------------------------------------------------------------------------------
+
 // square function
 template <typename T>
 auto sq = [](T const &x) {
     return (T)(x * x);
 };
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // struct for simulation table
 template <typename T>

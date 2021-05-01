@@ -1,3 +1,6 @@
+// 2D Ising model simulation via Metropolis-Hastings algorithm
+// serial setup
+
 // include header(s)
 #include <random>
 #include <cmath>
@@ -9,7 +12,7 @@
 
 // constants
 // spatial size of simulation table (use > 1)
-const int spatialSize = 50;
+const int spatialSize = 40;
 // integration time
 const int time = 15000;
 // thermalisation time
@@ -89,7 +92,7 @@ int main()
             // choose random spin
             int row = distrInt(gen);
             int col = distrInt(gen);
-            // random number for flippin
+            // random number for flipping
             double randVal = distrReal(gen);
             // rate
             double rate = Rate(row, col, spatialSize, coupling);
