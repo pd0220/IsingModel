@@ -9,6 +9,7 @@
 #include "Table.hh"
 // for parallelisation
 #include <thread>
+#include <mutex>
 // time measurement
 #include <chrono>
 
@@ -16,13 +17,13 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 240;
+const int spatialSize = 32;
 // integration time
-const int intTime = 1000;
+const int intTime = 7500;
 // scale for coupling index
 const double scalar = 50.;
 // number of threads (16 in my setup)
-const std::size_t nThread = 8;
+const std::size_t nThread = std::thread::hardware_concurrency();
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -99,13 +100,24 @@ int main()
 
     // Metroplois sweep
     auto MetropolisSweep = [&](int minRow, double coupling) {
-        // visit sites
-        // parity: even
-        for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
-            SpinFlip(0, minRow, coupling);
-        // parity: odd
-        for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
-            SpinFlip(1, minRow, coupling);
+        for (int iSweep = 0; iSweep < intTime; iSweep++)
+        {
+            // visit sites
+            // parity: even
+            std::mutex mutexEven;
+            {
+                std::lock_guard<std::mutex> lock(mutexEven);
+                for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
+                    SpinFlip(0, minRow, coupling);
+            }
+            // parity: odd
+            std::mutex mutexOdd;
+            {
+                std::lock_guard<std::mutex> lock(mutexOdd);
+                for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
+                    SpinFlip(1, minRow, coupling);
+            }
+        }
     };
 
     // file
@@ -115,7 +127,7 @@ int main()
     // vector of threads
     std::vector<std::thread> threads(nThread);
     // vector of time measurements
-    std::vector<double> timeMeasurement(100);
+    std::vector<double> timeMeasurement;
 
     // simulation
     for (int iCoupling = 0; iCoupling < 100; iCoupling++)
@@ -129,20 +141,17 @@ int main()
         auto start = std::chrono::high_resolution_clock::now();
 
         // run Metropolis sweeps
-        for (int iSweep = 0; iSweep < intTime; iSweep++)
-        {
-            // start threads
-            for (int it = 0; it < nThread; it++)
-                threads[it] = std::thread(MetropolisSweep, it, coupling);
-            // join threads
-            for (auto &t : threads)
-                t.join();
-        }
+        // start threads
+        for (int it = 0; it < nThread; it++)
+            threads[it] = std::thread(MetropolisSweep, it, coupling);
+        // join threads
+        for (auto &t : threads)
+            t.join();
 
         // TIME #1
         auto stop = std::chrono::high_resolution_clock::now();
 
-        timeMeasurement[iCoupling] = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+        timeMeasurement.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count());
 
         // averaging magnetisation
         file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq<int>(spatialSize) << std::endl;
@@ -150,5 +159,6 @@ int main()
     file.close();
 
     // print computation time
-    std::cout << "Parrallel computation time with " << nThread << " threads: " << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) << " ms." << std::endl;
+    std::cout << "Mean parrallel computation time for a single table with " << nThread << " threads: "
+              << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) / static_cast<double>(timeMeasurement.size()) << " ms." << std::endl;
 }

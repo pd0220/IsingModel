@@ -14,9 +14,9 @@
 
 // constants
 // spatial size of simulation table (use > 1)
-const int spatialSize = 240;
+const int spatialSize = 32;
 // integration time
-const int intTime = 1000;
+const int intTime = 7500;
 // thermalisation time
 //const int thermTime = 1000;
 // scale for coupling index
@@ -81,7 +81,7 @@ int main()
     file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\test.txt");
 
     // vector of time measurements
-    std::vector<double> timeMeasurement(100);
+    std::vector<double> timeMeasurement;
 
     // simulation
     for (int iCoupling = 0; iCoupling < 100; iCoupling++)
@@ -122,7 +122,7 @@ int main()
         // TIME #1
         auto stop = std::chrono::high_resolution_clock::now();
 
-        timeMeasurement[iCoupling] = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+        timeMeasurement.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count());
 
         // averaging magnetisation
         file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq<int>(spatialSize) << std::endl;
@@ -130,5 +130,6 @@ int main()
     file.close();
 
     // print computation time
-    std::cout << "Serial computation time : " << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) << " ms." << std::endl;
+    std::cout << "Mean serial computation time for a single table : "
+              << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) / static_cast<double>(timeMeasurement.size()) << " ms." << std::endl;
 }
