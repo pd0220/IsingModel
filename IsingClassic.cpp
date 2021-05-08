@@ -16,7 +16,7 @@
 // spatial size of simulation table (use > 1)
 const int spatialSize = 64;
 // integration time
-const int intTime = 15000;
+const int intTime = 20000;
 // thermalisation time
 //const int thermTime = 1000;
 // scale for coupling index
@@ -89,7 +89,7 @@ int main()
     std::vector<double> timeMeasurement;
 
     // simulation
-    for (int iCoupling = 0; iCoupling < 100; iCoupling++)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
     {
         // reload table
         table = Table<int>(RandSpin, spatialSize);

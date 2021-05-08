@@ -21,7 +21,7 @@
 // spatial size of simulation table (use > 1 and even)
 const int spatialSize = 64;
 // integration time
-const int intTime = 15000;
+const int intTime = 20000;
 // scale for coupling index
 const double scalar = 50.;
 // number of threads (16 in my setup)
@@ -164,7 +164,7 @@ int main()
     std::vector<double> timeMeasurement;
 
     // simulation
-    for (int iCoupling = 0; iCoupling < 100; iCoupling++)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
     {
         // reload table
         table = Table<int>(RandSpin, spatialSize);
