@@ -14,9 +14,9 @@
 
 // constants
 // spatial size of simulation table (use > 1)
-const int spatialSize = 32;
+const int spatialSize = 64;
 // integration time
-const int intTime = 7500;
+const int intTime = 15000;
 // thermalisation time
 //const int thermTime = 1000;
 // scale for coupling index

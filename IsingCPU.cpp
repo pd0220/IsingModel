@@ -10,6 +10,8 @@
 // for parallelisation
 #include <thread>
 #include <mutex>
+#include <atomic>
+#include <condition_variable>
 // time measurement
 #include <chrono>
 
@@ -17,9 +19,9 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 32;
+const int spatialSize = 64;
 // integration time
-const int intTime = 7500;
+const int intTime = 15000;
 // scale for coupling index
 const double scalar = 50.;
 // number of threads (16 in my setup)
@@ -54,13 +56,13 @@ int main()
 
         // periodic boundary conditions
         int rowRight = (row + 1) % dim, rowLeft = (row + dim - 1) % dim, colDown = (col + 1) % dim, colUp = (col + dim - 1) % dim;
-        
+
         // neighbours
         int right = table(rowRight, col), left = table(rowLeft, col), down = table(row, colDown), up = table(row, colUp);
-        
+
         // quantity proportional to energy difference
         int energy = s * (up + down + left + right);
-        
+
         // return sign of difference or zero (initialize to zero)
         int sign = 0;
         if (energy > 0)
@@ -107,25 +109,48 @@ int main()
             table(row, col) *= -1;
     };
 
+    // mutex (mutual exclusion)
+    std::mutex m;
+    // condition variable ~ odd / even board only
+    std::condition_variable cv;
+    // atomic variables to manage thread waiting
+    std::atomic<int> counterEven = 0;
+    std::atomic<int> counterOdd = 0;
+
+    // check for wake up
+    auto WakeEven = [&]() { return counterEven % nThread == 0; };
+    auto WakeOdd = [&]() { return counterOdd % nThread == 0; };
+
     // Metroplois sweep
     auto MetropolisSweep = [&](int minRow, double coupling) {
         for (int iSweep = 0; iSweep < intTime; iSweep++)
         {
             // visit sites
             // parity: even
-            std::mutex mutexEven;
+            for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
+                SpinFlip(0, minRow, coupling);
+
+            // update counter after sweep and put thread to sleep
             {
-                std::lock_guard<std::mutex> lock(mutexEven);
-                for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
-                    SpinFlip(0, minRow, coupling);
+                std::unique_lock<std::mutex> lk(m);
+                counterEven++;
+                //std::cout << "Even waiting " << counterEven % nThread << " " << counterOdd % nThread << std::endl;
+                cv.wait(lk, WakeEven);
             }
-            // parity: odd
-            std::mutex mutexOdd;
+            cv.notify_all();
+
+            // parity odd
+            for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
+                SpinFlip(1, minRow, coupling);
+
+            // update counter after sweep and put thread to sleep
             {
-                std::lock_guard<std::mutex> lock(mutexOdd);
-                for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
-                    SpinFlip(1, minRow, coupling);
+                std::unique_lock<std::mutex> lk(m);
+                counterOdd++;
+                //std::cout << "Odd waiting " << counterEven % nThread << " " << counterOdd % nThread << std::endl;
+                cv.wait(lk, WakeOdd);
             }
+            cv.notify_all();
         }
     };
 
