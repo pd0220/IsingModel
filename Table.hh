@@ -9,8 +9,7 @@
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // square function
-template <typename T>
-auto sq = [](T const &x) { return (T)(x * x); };
+auto sq = [](auto const &x) { return (x * x); };
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -26,11 +25,11 @@ struct Table
     // default
     Table() : dim{0} {}
     // parametrized #1
-    Table(int L) : data{std::vector<T>(sq<int>(L), T(0))}, dim{L} {}
+    Table(int L) : data{std::vector<T>(sq(L), T(0))}, dim{L} {}
     // parametrized #2
     Table(int L, std::vector<T> const &vec) : data{vec}, dim{L}
     {
-        if (static_cast<double>(sq<int>(dim)) - static_cast<double>(vec.size()))
+        if (static_cast<double>(sq(dim)) - static_cast<double>(vec.size()))
         {
             std::cout << "Square matrix cannot be created." << std::endl;
             std::exit(-1);
@@ -48,7 +47,7 @@ struct Table
     template <typename func>
     Table(func f, int L) : dim{L}
     {
-        data.resize(static_cast<size_t>(sq<int>(dim)));
+        data.resize(static_cast<size_t>(sq(dim)));
         std::generate(data.begin(), data.end(), f);
     }
 

@@ -51,14 +51,23 @@ int main()
     auto DeltaE = [&](int row, int col, int dim) {
         // spin in question
         int s = table(row, col);
+
         // periodic boundary conditions
         int rowRight = (row + 1) % dim, rowLeft = (row + dim - 1) % dim, colDown = (col + 1) % dim, colUp = (col + dim - 1) % dim;
+        
         // neighbours
         int right = table(rowRight, col), left = table(rowLeft, col), down = table(row, colDown), up = table(row, colUp);
+        
         // quantity proportional to energy difference
         int energy = s * (up + down + left + right);
-        // return sign of difference or zero
-        return (int)((0 < energy) - (energy < 0));
+        
+        // return sign of difference or zero (initialize to zero)
+        int sign = 0;
+        if (energy > 0)
+            sign = 1;
+        else if (energy < 0)
+            sign = -1;
+        return sign;
     };
 
     // calculate rate
@@ -107,14 +116,14 @@ int main()
             std::mutex mutexEven;
             {
                 std::lock_guard<std::mutex> lock(mutexEven);
-                for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
+                for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                     SpinFlip(0, minRow, coupling);
             }
             // parity: odd
             std::mutex mutexOdd;
             {
                 std::lock_guard<std::mutex> lock(mutexOdd);
-                for (int iVisit = 0; iVisit < sq<int>(spatialSize) / nThread / 2; iVisit++)
+                for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                     SpinFlip(1, minRow, coupling);
             }
         }
@@ -154,7 +163,7 @@ int main()
         timeMeasurement.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count());
 
         // averaging magnetisation
-        file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq<int>(spatialSize) << std::endl;
+        file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq(spatialSize) << std::endl;
     }
     file.close();
 

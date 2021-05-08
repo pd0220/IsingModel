@@ -58,8 +58,13 @@ int main()
         // quantity proportional to energy difference
         int energy = s * (up + down + left + right);
 
-        // return sign of difference or zero
-        return (0 < energy) - (energy < 0);
+        // return sign of difference or zero (initialize to zero)
+        int sign = 0;
+        if (energy > 0)
+            sign = 1;
+        else if (energy < 0)
+            sign = -1;
+        return sign;
     };
 
     // calculate rate
@@ -95,7 +100,7 @@ int main()
         auto start = std::chrono::high_resolution_clock::now();
 
         // run for given table
-        for (int i = 0; i < sq<int>(spatialSize) * intTime; i++)
+        for (int i = 0; i < sq(spatialSize) * intTime; i++)
         {
             // choose random spin
             int row = distrInt(gen);
@@ -106,17 +111,6 @@ int main()
             double rate = Rate(row, col, spatialSize, coupling);
             if (rate > randVal)
                 table(row, col) *= -1;
-
-            /*
-            // write to file
-            // time units
-            int iTime = i % sq<int>(spatialSize);
-            if (iTime == 0 && i > (sq<int>(spatialSize) * thermTime))
-            {
-                // configurations
-                WriteToFile(file, table.data);
-            }
-            */
         }
 
         // TIME #1
@@ -125,7 +119,7 @@ int main()
         timeMeasurement.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count());
 
         // averaging magnetisation
-        file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq<int>(spatialSize) << std::endl;
+        file << coupling << " " << std::accumulate(table.data.begin(), table.data.end(), 0.) / sq(spatialSize) << std::endl;
     }
     file.close();
 
