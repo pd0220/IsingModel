@@ -139,6 +139,7 @@ int main()
                 {
                     // wake all the threads
                     counterEven++;
+                    // set odd counter to zero
                     counterOdd = 0;
                     cv.notify_all();
                 }
@@ -165,6 +166,7 @@ int main()
                 {
                     // wake all the threads
                     counterOdd++;
+                    // set even counter to zero
                     counterEven = 0;
                     cv.notify_all();
                 }
