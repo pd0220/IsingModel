@@ -16,9 +16,7 @@
 // spatial size of simulation table (use > 1)
 const int spatialSize = 64;
 // integration time
-const int intTime = 20000;
-// thermalisation time
-//const int thermTime = 1000;
+const int intTime = 30000;
 // scale for coupling index
 const double scalar = 50.;
 

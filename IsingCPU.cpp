@@ -21,7 +21,7 @@
 // spatial size of simulation table (use > 1 and even)
 const int spatialSize = 64;
 // integration time
-const int intTime = 20000;
+const int intTime = 30000;
 // scale for coupling index
 const double scalar = 50.;
 // number of threads (16 in my setup)
@@ -118,8 +118,8 @@ int main()
     std::atomic<int> counterOdd = 0;
 
     // check for wake up
-    auto WakeEven = [&]() { return counterEven % nThread == 0; };
-    auto WakeOdd = [&]() { return counterOdd % nThread == 0; };
+    auto WakeEven = [&]() { return counterEven == nThread; };
+    auto WakeOdd = [&]() { return counterOdd == nThread; };
 
     // Metroplois sweep
     auto MetropolisSweep = [&](int minRow, double coupling) {
@@ -130,27 +130,53 @@ int main()
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                 SpinFlip(0, minRow, coupling);
 
-            // update counter after sweep and put thread to sleep
             {
+                // lock mutex
                 std::unique_lock<std::mutex> lk(m);
-                counterEven++;
-                //std::cout << "Even waiting " << counterEven % nThread << " " << counterOdd % nThread << std::endl;
-                cv.wait(lk, WakeEven);
+
+                // if last awake thread: wake all
+                if (counterEven == nThread - 1)
+                {
+                    // wake all the threads
+                    counterEven++;
+                    counterOdd = 0;
+                    cv.notify_all();
+                }
+                // else ~ go to sleep
+                else
+                {
+                    // update counter after sweep and put thread to sleep
+                    counterEven++;
+                    //std::cout << "Even waiting " << counterEven << " " << counterOdd << std::endl;
+                    cv.wait(lk, WakeEven);
+                }
             }
-            cv.notify_all();
 
             // parity odd
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                 SpinFlip(1, minRow, coupling);
 
-            // update counter after sweep and put thread to sleep
             {
+                // lock mutex
                 std::unique_lock<std::mutex> lk(m);
-                counterOdd++;
-                //std::cout << "Odd waiting " << counterEven % nThread << " " << counterOdd % nThread << std::endl;
-                cv.wait(lk, WakeOdd);
+
+                // if last awake thread: wake all
+                if (counterOdd == nThread - 1)
+                {
+                    // wake all the threads
+                    counterOdd++;
+                    counterEven = 0;
+                    cv.notify_all();
+                }
+                // else ~ go to sleep
+                else
+                {
+                    // update counter after sweep and put thread to sleep
+                    counterOdd++;
+                    //std::cout << "Odd waiting " << counterEven << " " << counterOdd << std::endl;
+                    cv.wait(lk, WakeOdd);
+                }
             }
-            cv.notify_all();
         }
     };
 
@@ -170,6 +196,10 @@ int main()
         table = Table<int>(RandSpin, spatialSize);
         // real coupling
         double coupling = (double)(iCoupling / scalar);
+
+        // set atomic variables to zero before sweeps
+        counterEven = 0;
+        counterOdd = 0;
 
         // TIME #0
         auto start = std::chrono::high_resolution_clock::now();
