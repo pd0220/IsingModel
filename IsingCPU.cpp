@@ -130,6 +130,7 @@ int main()
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                 SpinFlip(0, minRow, coupling);
 
+            // enter scope ~ lock
             {
                 // lock mutex
                 std::unique_lock<std::mutex> lk(m);
@@ -157,6 +158,7 @@ int main()
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                 SpinFlip(1, minRow, coupling);
 
+            // enter scope ~ lock
             {
                 // lock mutex
                 std::unique_lock<std::mutex> lk(m);
