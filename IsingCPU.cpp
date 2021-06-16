@@ -42,15 +42,15 @@ int main()
     // [0, size / 2 - 1] ~ integer
     std::uniform_int_distribution<int> distrIntSubTableHalf(0, (int)(spatialSize / 2 / nThread - 1));
     // random generator lambda for spin initialisation
-    auto RandSpin = [&distrReal, &gen]() { return (double)distrReal(gen) > 0.5 ? 1 : -1; };
-    // random generator lambda for spin flipping
-    auto RandFlip = [&distrReal, &gen]() { return (double)distrReal(gen); };
-
+    auto RandSpin = [&distrReal, &gen]()
+    { return (double)distrReal(gen) > 0.5 ? 1 : -1; };
+    
     // initialize spins
     Table<int> table = Table<int>(spatialSize);
 
     // calculate the sign of the energy difference due to a single flip
-    auto DeltaE = [&](int row, int col, int dim) {
+    auto DeltaE = [&](int row, int col, int dim)
+    {
         // spin in question
         int s = table(row, col);
 
@@ -73,7 +73,8 @@ int main()
     };
 
     // calculate rate
-    auto Rate = [&](int row, int col, int dim, double coupling) {
+    auto Rate = [&](int row, int col, int dim, double coupling)
+    {
         // sign of energy difference due to flip
         int deltaE = DeltaE(row, col, dim);
         // calculate rate
@@ -86,7 +87,8 @@ int main()
     };
 
     // spin flip ~ site visit
-    auto SpinFlip = [&](bool parity, int minRow, double coupling) {
+    auto SpinFlip = [&](bool parity, int minRow, double coupling)
+    {
         // choosing row and column according to parity
         // col (or row) can be anything
         int col = distrInt(gen);
@@ -118,11 +120,14 @@ int main()
     std::atomic<int> counterOdd = 0;
 
     // check for wake up
-    auto WakeEven = [&]() { return counterEven == nThread; };
-    auto WakeOdd = [&]() { return counterOdd == nThread; };
+    auto WakeEven = [&]()
+    { return counterEven == nThread; };
+    auto WakeOdd = [&]()
+    { return counterOdd == nThread; };
 
     // Metroplois sweep
-    auto MetropolisSweep = [&](int minRow, double coupling) {
+    auto MetropolisSweep = [&](int minRow, double coupling)
+    {
         for (int iSweep = 0; iSweep < intTime; iSweep++)
         {
             // visit sites
@@ -154,7 +159,7 @@ int main()
                 }
             }
 
-            // parity odd
+            // parity: odd
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
                 SpinFlip(1, minRow, coupling);
 

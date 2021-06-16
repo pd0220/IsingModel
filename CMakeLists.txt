@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
-project(IsingClassic VERSION 0.1.0)
+project(IsingClassic VERSION 0.1.0 LANGUAGES CXX CUDA)
 
 if (MSVC)
   string(REGEX REPLACE "/W[0-9]" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
@@ -11,6 +11,7 @@ enable_testing()
 
 add_executable(IsingClassic IsingClassic.cpp)
 add_executable(IsingCPU IsingCPU.cpp)
+add_executable(IsingGPU IsingGPU.cu)
     
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

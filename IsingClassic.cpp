@@ -16,7 +16,7 @@
 // spatial size of simulation table (use > 1)
 const int spatialSize = 64;
 // integration time
-const int intTime = 1000;
+const int intTime = 30000;
 // scale for coupling index
 const double scalar = 50.;
 
@@ -31,11 +31,13 @@ int main()
     std::uniform_real_distribution<double> distrReal(0., 1.);
     std::uniform_int_distribution<int> distrInt(0, spatialSize - 1);
     // random generator lambda for spin initialisation
-    auto RandSpin = [&distrReal, &gen]() {
+    auto RandSpin = [&distrReal, &gen]()
+    {
         return (double)distrReal(gen) > 0.5 ? 1 : -1;
     };
     // random generator lambda for spin flipping
-    auto RandFlip = [&distrReal, &gen]() {
+    auto RandFlip = [&distrReal, &gen]()
+    {
         return (double)distrReal(gen);
     };
 
@@ -43,7 +45,8 @@ int main()
     Table<int> table = Table<int>(RandSpin, spatialSize);
 
     // calculate the sign of the energy difference due to a single flip
-    auto DeltaE = [&table](int row, int col, int dim) {
+    auto DeltaE = [&table](int row, int col, int dim)
+    {
         // spin in question
         int s = table(row, col);
 
@@ -66,7 +69,8 @@ int main()
     };
 
     // calculate rate
-    auto Rate = [&table, &DeltaE](int row, int col, int dim, double coupling) {
+    auto Rate = [&table, &DeltaE](int row, int col, int dim, double coupling)
+    {
         // sign of energy difference due to flip
         int deltaE = DeltaE(row, col, dim);
 

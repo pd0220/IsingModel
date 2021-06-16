@@ -9,7 +9,8 @@
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // square function
-auto sq = [](auto const &x) { return (x * x); };
+auto sq = [](auto const &x)
+{ return (x * x); };
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -75,6 +76,12 @@ struct Table
         return (*this).dim;
     }
 
+    // get table data (vector)
+    std::vector<T> get_data() const
+    {
+        return (*this).data;
+    }
+
     // ostream
     friend std::ostream &operator<<(std::ostream &o, Table<T> const &table)
     {
@@ -95,7 +102,8 @@ struct Table
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // write to file
-auto WriteToFile = [](auto &file, auto const &data) {
+auto WriteToFile = [](auto &file, auto const &data)
+{
     for (auto &e : data)
         file << e << " ";
     file << "\n";
