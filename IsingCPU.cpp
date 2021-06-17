@@ -95,7 +95,7 @@ int main()
         // initialize row (or col)
         int row = distrIntSubTableHalf(gen);
         // even checkboard
-        if (parity == 0)
+        if (parity == false)
             row = ((col % 2) == 0) ? 2 * row : 2 * row + 1;
         // odd checkboard
         else
@@ -133,7 +133,7 @@ int main()
             // visit sites
             // parity: even
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
-                SpinFlip(0, minRow, coupling);
+                SpinFlip(false, minRow, coupling);
 
             // enter scope ~ lock
             {
@@ -161,7 +161,7 @@ int main()
 
             // parity: odd
             for (int iVisit = 0; iVisit < sq(spatialSize) / nThread / 2; iVisit++)
-                SpinFlip(1, minRow, coupling);
+                SpinFlip(true, minRow, coupling);
 
             // enter scope ~ lock
             {
