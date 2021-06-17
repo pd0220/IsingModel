@@ -6,10 +6,13 @@
 #include <cmath>
 #include <numeric>
 #include <string>
-#include "Table.hh"
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <algorithm>
 // time measurement
 #include <chrono>
-// CUDA
+// cuRAND
 #include <curand_kernel.h>
 #include <curand.h>
 
@@ -17,13 +20,17 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 64;
+const int spatialSize = 128;
 // integration time
-const int intTime = (int)1e6;
+const int intTime = (int)2e6;
 // scale for coupling index
 const float scalar = 50.;
-// number of threads
-const int nThread = 32;
+// number of threads per block
+const int nThread = 16;
+// block size
+const int sizeInBlocks = 4;
+// number of blocks
+const int nBlock = sizeInBlocks * sizeInBlocks;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -74,26 +81,13 @@ __host__ __device__ int Square(int x) { return x * x; }
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-// spin flip ~ site visit
-__device__ void SpinFlip(int *table, bool parity, int minRow, double coupling, curandState &state)
+// spin flip ~ site visit for given (row, col)
+__device__ void SpinFlip(int *table, bool parity, float coupling, curandState &state, int row, int col)
 {
-    // choosing row and column according to parity
-    // col (or row) can be anything
-    int col = static_cast<int>(curand_uniform(&state) * (spatialSize - 1));
-    // initialize row (or col)
-    int row = static_cast<int>(curand_uniform(&state) * (spatialSize / nThread / 2 - 1));
-    // even checkboard
-    if (parity == 0)
-        row = ((col % 2) == 0) ? 2 * row : 2 * row + 1;
-    // odd checkboard
-    else
-        row = ((col % 2) == 0) ? 2 * row + 1 : 2 * row;
-    // moving row to appropriate subtable
-    row += minRow * spatialSize / nThread;
     // random number for flipping
     float randVal = curand_uniform(&state);
     // rate
-    double rate = Rate(table, row, col, spatialSize, coupling);
+    float rate = Rate(table, row, col, spatialSize, coupling);
     // flip or not to flip
     if (rate > randVal)
         table[row * spatialSize + col] *= -1;
@@ -101,34 +95,61 @@ __device__ void SpinFlip(int *table, bool parity, int minRow, double coupling, c
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
-// kernel for Metropolis sweep
-__global__ void KernelMetropolisSweep(int *table, curandState *states, float coupling)
+// kernel for Metropolis sweep ~ even sites
+__global__ void KernelMetropolisEven(int *table, curandState *states, float coupling)
 {
+    // thread index inside the block
+    int id = threadIdx.x;
+    // block index
+    int bid = blockIdx.x;
     // thread index
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int tid = bid * blockDim.x + id;
     // initialize cuRAND
     curand_init(42, tid, 0, &states[tid]);
 
-    // run sweeps
-    for (int iSweep = 0; iSweep < intTime; iSweep++)
+    // locate block and thread
+    int minRow = (int)(bid / sizeInBlocks) * spatialSize / sizeInBlocks;
+    int minCol = bid * spatialSize / sizeInBlocks - sizeInBlocks * minRow;
+    // move to thread
+    minRow += id * spatialSize / sizeInBlocks / nThread;
+
+    __syncthreads();
+
+    for (int irow = minRow; irow < minRow + spatialSize / sizeInBlocks / nThread; irow++)
     {
-        // synchronise threads
-        __syncthreads();
+        for (int icol = (((irow % 2) == 0) ? minCol : minCol + 1); icol < minCol + spatialSize / sizeInBlocks; icol += 2)
+        {
+            SpinFlip(table, true, coupling, states[tid], irow, icol);
+        }
+    }
+}
 
-        // visit sites
-        // parity: even
-        for (int iVisit = 0; iVisit < Square(spatialSize) / nThread / 2; iVisit++)
-            SpinFlip(table, 0, tid, coupling, states[tid]);
+// kernel for Metropolis sweep ~ odd sites
+__global__ void KernelMetropolisOdd(int *table, curandState *states, float coupling)
+{
+    // thread index inside the block
+    int id = threadIdx.x;
+    // block index
+    int bid = blockIdx.x;
+    // thread index
+    int tid = bid * blockDim.x + id;
+    // initialize cuRAND
+    curand_init(42, tid, 0, &states[tid]);
 
-        // synchronise threads
-        __syncthreads();
+    // locate block and thread
+    int minRow = (int)(bid / sizeInBlocks) * spatialSize / sizeInBlocks;
+    int minCol = bid * spatialSize / sizeInBlocks - sizeInBlocks * minRow;
+    // move to thread
+    minRow += id * spatialSize / sizeInBlocks / nThread;
 
-        // parity: odd
-        for (int iVisit = 0; iVisit < Square(spatialSize) / nThread / 2; iVisit++)
-            SpinFlip(table, 1, tid, coupling, states[tid]);
+    __syncthreads();
 
-        // synchronise threads
-        __syncthreads();
+    for (int irow = minRow; irow < minRow + spatialSize / sizeInBlocks / nThread; irow++)
+    {
+        for (int icol = (((irow % 2) == 0) ? minCol + 1 : minCol); icol < minCol + spatialSize / sizeInBlocks; icol += 2)
+        {
+            SpinFlip(table, true, coupling, states[tid], irow, icol);
+        }
     }
 }
 
@@ -146,19 +167,28 @@ int main(int, char **)
     auto RandSpin = [&distrReal, &gen]()
     { return (float)distrReal(gen) > 0.5 ? 1 : -1; };
 
-    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
+    // initialize spins
+    // host
+    std::vector<int> table(Square(spatialSize));
+    std::generate(table.begin(), table.end(), RandSpin);
+    // device
+    int *tableDev = nullptr;
+    // cuRAND states
+    curandState *statesDev = nullptr;
+
+    for (int iCoupling = 70; iCoupling < 100; iCoupling += 10)
     {
         // real coupling
-        float coupling = (float)(iCoupling / scalar);
+        //float coupling = (float)(iCoupling / scalar);
+        float coupling = 10.;
         
-        // initialize spins
+        // (re)initialize spins
         // host
-        std::vector<int> table(Square(spatialSize));
         std::generate(table.begin(), table.end(), RandSpin);
         // device
-        int *tableDev = nullptr;
+        tableDev = nullptr;
         // cuRAND states
-        curandState *statesDev = nullptr;
+        statesDev = nullptr;
 
         // memory allocation for the device
         cudaError_t err = cudaSuccess;
@@ -168,7 +198,7 @@ int main(int, char **)
             std::cout << "Error allocating CUDA memory (TABLE): " << cudaGetErrorString(err) << std::endl;
             return -1;
         }
-        err = cudaMalloc((void **)&statesDev, nThread * sizeof(curandState));
+        err = cudaMalloc((void **)&statesDev, nBlock * nThread * sizeof(curandState));
         if (err != cudaSuccess)
         {
             std::cout << "Error allocating CUDA memory (cuRAND): " << cudaGetErrorString(err) << std::endl;
@@ -183,8 +213,16 @@ int main(int, char **)
             return -1;
         }
 
-        // start kernel
-        KernelMetropolisSweep<<<1, nThread>>>(tableDev, statesDev, coupling);
+        // simulation
+        // Metropolis sweeps
+        for (int iSweep = 0; iSweep < intTime; iSweep++)
+        {
+            // even kernel
+            KernelMetropolisEven<<<nBlock, nThread>>>(tableDev, statesDev, coupling);
+
+            // odd kernel
+            KernelMetropolisOdd<<<nBlock, nThread>>>(tableDev, statesDev, coupling);
+        }
 
         // get errors from run
         err = cudaGetLastError();
@@ -219,7 +257,7 @@ int main(int, char **)
         // print coupling
         std::cout << "J = " << coupling;
         // print magnetisation
-        std::cout << " |M| = " << std::abs(std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize)) << std::endl;
+        std::cout << " |M| = " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
 
         // file
         std::ofstream file;
