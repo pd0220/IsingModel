@@ -10,6 +10,7 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
+#include <stdio.h>
 // time measurement
 #include <chrono>
 // cuRAND
@@ -20,17 +21,19 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 128;
+const int spatialSize = 1024;
 // integration time
-const int intTime = (int)2e6;
+const int intTime = (int)1e6;
 // scale for coupling index
 const float scalar = 50.;
 // number of threads per block
-const int nThread = 16;
+const int nThread = 128;
 // block size
-const int sizeInBlocks = 4;
+const int sizeInBlocks = 8;
 // number of blocks
 const int nBlock = sizeInBlocks * sizeInBlocks;
+// size of a single block
+const int blockSize = spatialSize / sizeInBlocks;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -38,7 +41,7 @@ const int nBlock = sizeInBlocks * sizeInBlocks;
 __device__ int DeltaE(int *table, int row, int col, int dim)
 {
     // spin in question
-    int s = table[row * spatialSize + col];
+    int s = table[row * dim + col];
 
     // periodic boundary conditions
     int rowRight = (row + 1) % dim, rowLeft = (row + dim - 1) % dim, colDown = (col + 1) % dim, colUp = (col + dim - 1) % dim;
@@ -71,7 +74,7 @@ __device__ float Rate(int *table, int row, int col, int dim, float coupling)
     else if (deltaE == 0)
         return 0.5;
     else
-        return std::exp(-2 * coupling * deltaE);
+        return expf(-2 * coupling * deltaE);
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -82,13 +85,13 @@ __host__ __device__ int Square(int x) { return x * x; }
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
 // spin flip ~ site visit for given (row, col)
-__device__ void SpinFlip(int *table, bool parity, float coupling, curandState &state, int row, int col)
+__device__ void SpinFlip(int *table, float coupling, curandState &state, int row, int col)
 {
     // random number for flipping
     float randVal = curand_uniform(&state);
     // rate
     float rate = Rate(table, row, col, spatialSize, coupling);
-    // flip or not to flip
+    // flip or not to flip...
     if (rate > randVal)
         table[row * spatialSize + col] *= -1;
 }
@@ -108,18 +111,19 @@ __global__ void KernelMetropolisEven(int *table, curandState *states, float coup
     curand_init(42, tid, 0, &states[tid]);
 
     // locate block and thread
-    int minRow = (int)(bid / sizeInBlocks) * spatialSize / sizeInBlocks;
-    int minCol = bid * spatialSize / sizeInBlocks - sizeInBlocks * minRow;
+    int minRow = (int)(bid / sizeInBlocks) * blockSize;
+    int minCol = bid * blockSize - sizeInBlocks * minRow;
     // move to thread
-    minRow += id * spatialSize / sizeInBlocks / nThread;
+    minRow += id * blockSize / nThread;
 
     __syncthreads();
 
-    for (int irow = minRow; irow < minRow + spatialSize / sizeInBlocks / nThread; irow++)
+    for (int irow = minRow; irow < minRow + blockSize / nThread; irow++)
     {
-        for (int icol = (((irow % 2) == 0) ? minCol : minCol + 1); icol < minCol + spatialSize / sizeInBlocks; icol += 2)
+        // columns for even sites only
+        for (int icol = (((irow % 2) == 0) ? minCol : minCol + 1); icol < minCol + blockSize; icol += 2)
         {
-            SpinFlip(table, true, coupling, states[tid], irow, icol);
+            SpinFlip(table, coupling, states[tid], irow, icol);
         }
     }
 }
@@ -134,21 +138,22 @@ __global__ void KernelMetropolisOdd(int *table, curandState *states, float coupl
     // thread index
     int tid = bid * blockDim.x + id;
     // initialize cuRAND
-    curand_init(42, tid, 0, &states[tid]);
+    curand_init(43, tid, 0, &states[tid]);
 
     // locate block and thread
-    int minRow = (int)(bid / sizeInBlocks) * spatialSize / sizeInBlocks;
-    int minCol = bid * spatialSize / sizeInBlocks - sizeInBlocks * minRow;
+    int minRow = (int)(bid / sizeInBlocks) * blockSize;
+    int minCol = bid * blockSize - sizeInBlocks * minRow;
     // move to thread
-    minRow += id * spatialSize / sizeInBlocks / nThread;
+    minRow += id * blockSize / nThread;
 
     __syncthreads();
 
-    for (int irow = minRow; irow < minRow + spatialSize / sizeInBlocks / nThread; irow++)
+    for (int irow = minRow; irow < minRow + blockSize / nThread; irow++)
     {
-        for (int icol = (((irow % 2) == 0) ? minCol + 1 : minCol); icol < minCol + spatialSize / sizeInBlocks; icol += 2)
+        // columns for odd sites only
+        for (int icol = (((irow % 2) == 0) ? minCol + 1 : minCol); icol < minCol + blockSize; icol += 2)
         {
-            SpinFlip(table, true, coupling, states[tid], irow, icol);
+            SpinFlip(table, coupling, states[tid], irow, icol);
         }
     }
 }
@@ -170,17 +175,15 @@ int main(int, char **)
     // initialize spins
     // host
     std::vector<int> table(Square(spatialSize));
-    std::generate(table.begin(), table.end(), RandSpin);
     // device
     int *tableDev = nullptr;
     // cuRAND states
     curandState *statesDev = nullptr;
 
-    for (int iCoupling = 70; iCoupling < 100; iCoupling += 10)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 10)
     {
         // real coupling
-        //float coupling = (float)(iCoupling / scalar);
-        float coupling = 10.;
+        float coupling = (float)(iCoupling / scalar);
         
         // (re)initialize spins
         // host
@@ -255,9 +258,9 @@ int main(int, char **)
         }
 
         // print coupling
-        std::cout << "J = " << coupling;
+        std::cout << "J * beta = " << coupling;
         // print magnetisation
-        std::cout << " |M| = " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
+        std::cout << " M = " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
 
         // file
         std::ofstream file;
