@@ -115,9 +115,7 @@ __global__ void KernelMetropolisEven(int *table, curandState *states, float coup
     int minCol = bid * blockSize - sizeInBlocks * minRow;
     // move to thread
     minRow += id * blockSize / nThread;
-
-    __syncthreads();
-
+    
     for (int irow = minRow; irow < minRow + blockSize / nThread; irow++)
     {
         // columns for even sites only
@@ -145,8 +143,6 @@ __global__ void KernelMetropolisOdd(int *table, curandState *states, float coupl
     int minCol = bid * blockSize - sizeInBlocks * minRow;
     // move to thread
     minRow += id * blockSize / nThread;
-
-    __syncthreads();
 
     for (int irow = minRow; irow < minRow + blockSize / nThread; irow++)
     {
