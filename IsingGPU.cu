@@ -184,7 +184,7 @@ int main(int, char **)
     {
         // real coupling
         float coupling = (float)(iCoupling / scalar);
-        
+
         // (re)initialize spins
         // host
         std::generate(table.begin(), table.end(), RandSpin);
