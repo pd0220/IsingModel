@@ -21,15 +21,15 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 256;
+const int spatialSize = 64;
 // integration time
-const int intTime = (int)1e3;
+const int intTime = 5000;
 // scale for coupling index
 const float scalar = 50.;
 // number of threads per block
-const int nThread = 4;
+const int nThread = 16;
 // block size
-const int sizeInBlocks = 64;
+const int sizeInBlocks = 4;
 // number of blocks
 const int nBlock = sizeInBlocks * sizeInBlocks;
 // size of a single block
@@ -179,8 +179,12 @@ int main(int, char **)
     // cuRAND states
     curandState *statesDev = nullptr;
 
+    // file
+    std::ofstream file;
+    file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\testGPU.txt");
+
     // loop over couplings (now just a single one to create tables for animation)
-    for (int iCoupling = 0; iCoupling < 100; iCoupling += 10)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
     {
         // real coupling
         float coupling = (float)(iCoupling / scalar);
@@ -282,11 +286,10 @@ int main(int, char **)
         }
         timeMeasurement.push_back(dt);
 
-        // print coupling
-        //std::cout << "J * beta = " << coupling;
-        // print magnetisation
-        //std::cout << " M = " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
+        // averaging magnetisation
+        file << coupling << " " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
     }
+    file.close();
 
     // print computation time
     std::cout << "Mean parrallel computation time for a single table on GPU: "

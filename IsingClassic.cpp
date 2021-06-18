@@ -14,9 +14,9 @@
 
 // constants
 // spatial size of simulation table (use > 1)
-const int spatialSize = 32;
+const int spatialSize = 64;
 // integration time
-const int intTime = 1000;
+const int intTime = 2500;
 // scale for coupling index
 const double scalar = 50.;
 
@@ -91,7 +91,7 @@ int main()
     std::vector<double> timeMeasurement;
 
     // simulation
-    for (int iCoupling = 0; iCoupling < 100; iCoupling += 10)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
     {
         // reload table
         table = Table<int>(RandSpin, spatialSize);
