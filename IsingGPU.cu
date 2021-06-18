@@ -23,13 +23,13 @@
 // spatial size of simulation table (use > 1 and even)
 const int spatialSize = 256;
 // integration time
-const int intTime = (int)1e6;
+const int intTime = (int)1e3;
 // scale for coupling index
 const float scalar = 50.;
 // number of threads per block
-const int nThread = 32;
+const int nThread = 4;
 // block size
-const int sizeInBlocks = 8;
+const int sizeInBlocks = 64;
 // number of blocks
 const int nBlock = sizeInBlocks * sizeInBlocks;
 // size of a single block
@@ -168,6 +168,9 @@ int main(int, char **)
     auto RandSpin = [&distrReal, &gen]()
     { return (float)distrReal(gen) > 0.5 ? 1 : -1; };
 
+    // vector of time measurements
+    std::vector<float> timeMeasurement;
+
     // initialize spins
     // host
     std::vector<int> table(Square(spatialSize));
@@ -177,7 +180,7 @@ int main(int, char **)
     curandState *statesDev = nullptr;
 
     // loop over couplings (now just a single one to create tables for animation)
-    for (int iCoupling = 90; iCoupling < 100; iCoupling += 10)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 10)
     {
         // real coupling
         float coupling = (float)(iCoupling / scalar);
@@ -186,48 +189,48 @@ int main(int, char **)
         // host
         std::generate(table.begin(), table.end(), RandSpin);
 
+        // CUDA time measurement
+        cudaEvent_t evt[2];
+        for (auto &e : evt)
+        {
+            cudaEventCreate(&e);
+        }
+
+        // device
+        tableDev = nullptr;
+        // cuRAND states
+        statesDev = nullptr;
+
+        // memory allocation for the device
+        cudaError_t err = cudaSuccess;
+        err = cudaMalloc((void **)&tableDev, Square(spatialSize) * sizeof(int));
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error allocating CUDA memory (TABLE): " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
+        err = cudaMalloc((void **)&statesDev, nBlock * nThread * sizeof(curandState));
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error allocating CUDA memory (cuRAND): " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
+
+        // copy data onto device
+        err = cudaMemcpy(tableDev, table.data(), Square(spatialSize) * sizeof(int), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error copying memory to device (TABLE): " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
+
+        // TIME #0
+        cudaEventRecord(evt[0]);
+
         // simulation
         // Metropolis sweeps
-        for (int iSweep = 0; iSweep < 1000; iSweep++)
+        for (int iSweep = 0; iSweep < intTime; iSweep++)
         {
-            // device
-            tableDev = nullptr;
-            // cuRAND states
-            statesDev = nullptr;
-
-            // memory allocation for the device
-            cudaError_t err = cudaSuccess;
-            err = cudaMalloc((void **)&tableDev, Square(spatialSize) * sizeof(int));
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error allocating CUDA memory (TABLE): " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-            err = cudaMalloc((void **)&statesDev, nBlock * nThread * sizeof(curandState));
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error allocating CUDA memory (cuRAND): " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-
-            // copy data onto device
-            err = cudaMemcpy(tableDev, table.data(), Square(spatialSize) * sizeof(int), cudaMemcpyHostToDevice);
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error copying memory to device (TABLE): " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-
-            // file
-            std::ofstream file;
-            file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\testGPUTable.txt", std::ofstream::app);
-            for (int i = 0; i < Square(spatialSize); i++)
-            {
-                file << table[i] << " ";
-            }
-            file << std::endl;
-            file.close();
-
             // even kernel
             KernelMetropolisEven<<<nBlock, nThread>>>(tableDev, statesDev, coupling, iSweep);
 
@@ -241,33 +244,51 @@ int main(int, char **)
                 std::cout << "CUDA error in kernel call: " << cudaGetErrorString(err) << std::endl;
                 return -1;
             }
-
-            // copy data from device
-            err = cudaMemcpy(table.data(), tableDev, Square(spatialSize) * sizeof(int), cudaMemcpyDeviceToHost);
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error copying memory to host: " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-
-            // free memory
-            err = cudaFree(tableDev);
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error freeing allocation (TABLE): " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-            err = cudaFree(statesDev);
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error freeing allocation (cuRAND): " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-
-            // print coupling
-            std::cout << "J * beta = " << coupling;
-            // print magnetisation
-            std::cout << " M = " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
         }
+
+        // TIME #1
+        cudaEventRecord(evt[1]);
+
+        // copy data from device
+        err = cudaMemcpy(table.data(), tableDev, Square(spatialSize) * sizeof(int), cudaMemcpyDeviceToHost);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error copying memory to host: " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
+
+        // free memory
+        err = cudaFree(tableDev);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error freeing allocation (TABLE): " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
+        err = cudaFree(statesDev);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error freeing allocation (cuRAND): " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
+
+        // CUDA time measurement
+        cudaEventSynchronize(evt[1]);
+        // time in milliseconds
+        float dt = 0.;
+        cudaEventElapsedTime(&dt, evt[0], evt[1]);
+        for (auto &e : evt)
+        {
+            cudaEventDestroy(e);
+        }
+        timeMeasurement.push_back(dt);
+
+        // print coupling
+        //std::cout << "J * beta = " << coupling;
+        // print magnetisation
+        //std::cout << " M = " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
     }
+
+    // print computation time
+    std::cout << "Mean parrallel computation time for a single table on GPU: "
+              << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) / static_cast<double>(timeMeasurement.size()) << " ms." << std::endl;
 }

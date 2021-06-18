@@ -19,9 +19,9 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 64;
+const int spatialSize = 32;
 // integration time
-const int intTime = 30000;
+const int intTime = 1000;
 // scale for coupling index
 const double scalar = 50.;
 // number of threads (16 in my setup)
