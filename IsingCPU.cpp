@@ -21,7 +21,7 @@
 // spatial size of simulation table (use > 1 and even)
 const int spatialSize = 64;
 // integration time
-const int intTime = 5000;
+const int intTime = 3000;
 // scale for coupling index
 const double scalar = 50.;
 // number of threads (16 in my setup)

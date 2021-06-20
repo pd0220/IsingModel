@@ -183,7 +183,7 @@ int main(int, char **)
     std::ofstream file;
     file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\testGPU.txt");
 
-    // loop over couplings (now just a single one to create tables for animation)
+    // loop over couplings
     for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
     {
         // real coupling
