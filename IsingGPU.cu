@@ -23,11 +23,11 @@
 // spatial size of simulation table (use > 1 and even)
 const int spatialSize = 64;
 // integration time
-const int intTime = 5000;
+const int intTime = (int)100000;
 // scale for coupling index
 const float scalar = 50.;
 // number of threads per block
-const int nThread = 16;
+const int nThread = 8;
 // block size
 const int sizeInBlocks = 4;
 // number of blocks
@@ -184,7 +184,7 @@ int main(int, char **)
     file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\testGPU.txt");
 
     // loop over couplings
-    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
+    for (int iCoupling = 0; iCoupling < 100; iCoupling += 1)
     {
         // real coupling
         float coupling = (float)(iCoupling / scalar);
@@ -195,9 +195,15 @@ int main(int, char **)
 
         // CUDA time measurement
         cudaEvent_t evt[2];
+        cudaError_t err = cudaSuccess;
         for (auto &e : evt)
         {
-            cudaEventCreate(&e);
+            err = cudaEventCreate(&e);
+            if (err != cudaSuccess)
+            {
+                std::cout << "Error in creating time measurement object: " << cudaGetErrorString(err) << std::endl;
+                return -1;
+            }
         }
 
         // device
@@ -206,7 +212,6 @@ int main(int, char **)
         statesDev = nullptr;
 
         // memory allocation for the device
-        cudaError_t err = cudaSuccess;
         err = cudaMalloc((void **)&tableDev, Square(spatialSize) * sizeof(int));
         if (err != cudaSuccess)
         {
@@ -229,7 +234,12 @@ int main(int, char **)
         }
 
         // TIME #0
-        cudaEventRecord(evt[0]);
+        err = cudaEventRecord(evt[0]);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error recording time at start: " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
 
         // simulation
         // Metropolis sweeps
@@ -251,7 +261,12 @@ int main(int, char **)
         }
 
         // TIME #1
-        cudaEventRecord(evt[1]);
+        err = cudaEventRecord(evt[1]);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error recording time at stop: " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
 
         // copy data from device
         err = cudaMemcpy(table.data(), tableDev, Square(spatialSize) * sizeof(int), cudaMemcpyDeviceToHost);
@@ -276,13 +291,28 @@ int main(int, char **)
         }
 
         // CUDA time measurement
-        cudaEventSynchronize(evt[1]);
+        err = cudaEventSynchronize(evt[1]);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error in synchronising time measurements: " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
         // time in milliseconds
         float dt = 0.;
-        cudaEventElapsedTime(&dt, evt[0], evt[1]);
+        err = cudaEventElapsedTime(&dt, evt[0], evt[1]);
+        if (err != cudaSuccess)
+        {
+            std::cout << "Error in calculating total elapsed time: " << cudaGetErrorString(err) << std::endl;
+            return -1;
+        }
         for (auto &e : evt)
         {
-            cudaEventDestroy(e);
+            err = cudaEventDestroy(e);
+            if (err != cudaSuccess)
+            {
+                std::cout << "Error in deleting time measurement object: " << cudaGetErrorString(err) << std::endl;
+                return -1;
+            }
         }
         timeMeasurement.push_back(dt);
 
