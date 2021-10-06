@@ -21,15 +21,17 @@
 
 // constants
 // spatial size of simulation table (use > 1 and even)
-const int spatialSize = 256;
+const int spatialSize = 1024;
 // integration time
 const int intTime = (int)1e4;
-// scale for coupling index
-const float scalar = 50.;
+// coupling
+const float coupling = (float)0.45;
+// file name to save data
+const std::string fileName = "C:\\Users\\david\\Desktop\\MSc\\Ising model\\RENORM_HW1\\magnetisation.txt";
 // number of threads per block
 const int nThread = 64;
 // block size
-const int sizeInBlocks = 4;
+const int sizeInBlocks = 16;
 // number of blocks
 const int nBlock = sizeInBlocks * sizeInBlocks;
 // size of a single block
@@ -156,53 +158,32 @@ int main(int, char **)
     std::mt19937 gen(rd());
     // [0, 1] ~ real
     std::uniform_real_distribution<double> distrReal(0., 1.);
-    // random generator lambda for spin initialisation
-    auto RandSpin = [&distrReal, &gen]()
-    { return (float)distrReal(gen) > 0.5 ? 1 : -1; };
 
     // vector of time measurements
     std::vector<float> timeMeasurement;
 
-    // initialize spins
+    // initialize spins (cold start)
     // host
-    std::vector<int> table(Square(spatialSize));
+    std::vector<int> table(Square(spatialSize), 1);
     // device
     int *tableDev = nullptr;
     // cuRAND states
     curandState *statesDev = nullptr;
 
-    // file
-    std::ofstream file;
-    file.open((std::string) "C:\\Users\\david\\Desktop\\MSc\\Ising model\\Python\\testGPU.txt");
+    // container for magnetisation values
+    std::vector<double> m(intTime, 0.);
 
-    // loop over couplings
-    for (int iCoupling = 0; iCoupling < 100; iCoupling += 5)
+    // simulation
+    // Metropolis sweeps
+    for (int iSweep = 0; iSweep < intTime; iSweep++)
     {
-        // real coupling
-        float coupling = (float)(iCoupling / scalar);
-
-        // (re)initialize spins
-        // host
-        //std::generate(table.begin(), table.end(), RandSpin);
-        table = std::vector<int>(Square(spatialSize), 1);
-
-        // CUDA time measurement
-        cudaEvent_t evt[2];
-        cudaError_t err = cudaSuccess;
-        for (auto &e : evt)
-        {
-            err = cudaEventCreate(&e);
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error in creating time measurement object: " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-        }
-
         // device
         tableDev = nullptr;
         // cuRAND states
         statesDev = nullptr;
+
+        // CUDA error handling
+        cudaError_t err = cudaSuccess;
 
         // memory allocation for the device
         err = cudaMalloc((void **)&tableDev, Square(spatialSize) * sizeof(int));
@@ -226,41 +207,19 @@ int main(int, char **)
             return -1;
         }
 
-        // TIME #0
-        err = cudaEventRecord(evt[0]);
+        // even kernel
+        KernelMetropolisEven<<<nBlock, nThread>>>(tableDev, statesDev, coupling, iSweep);
+
+        // odd kernel
+        KernelMetropolisOdd<<<nBlock, nThread>>>(tableDev, statesDev, coupling, iSweep);
+
+        // get errors from run
+        err = cudaGetLastError();
         if (err != cudaSuccess)
         {
-            std::cout << "Error recording time at start: " << cudaGetErrorString(err) << std::endl;
+            std::cout << "CUDA error in kernel call: " << cudaGetErrorString(err) << std::endl;
             return -1;
         }
-
-        // simulation
-        // Metropolis sweeps
-        for (int iSweep = 0; iSweep < intTime; iSweep++)
-        {
-            // even kernel
-            KernelMetropolisEven<<<nBlock, nThread>>>(tableDev, statesDev, coupling, iSweep);
-
-            // odd kernel
-            KernelMetropolisOdd<<<nBlock, nThread>>>(tableDev, statesDev, coupling, iSweep);
-
-            // get errors from run
-            err = cudaGetLastError();
-            if (err != cudaSuccess)
-            {
-                std::cout << "CUDA error in kernel call: " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-        }
-
-        // TIME #1
-        err = cudaEventRecord(evt[1]);
-        if (err != cudaSuccess)
-        {
-            std::cout << "Error recording time at stop: " << cudaGetErrorString(err) << std::endl;
-            return -1;
-        }
-
         // copy data from device
         err = cudaMemcpy(table.data(), tableDev, Square(spatialSize) * sizeof(int), cudaMemcpyDeviceToHost);
         if (err != cudaSuccess)
@@ -283,38 +242,17 @@ int main(int, char **)
             return -1;
         }
 
-        // CUDA time measurement
-        err = cudaEventSynchronize(evt[1]);
-        if (err != cudaSuccess)
-        {
-            std::cout << "Error in synchronising time measurements: " << cudaGetErrorString(err) << std::endl;
-            return -1;
-        }
-        // time in milliseconds
-        float dt = 0.;
-        err = cudaEventElapsedTime(&dt, evt[0], evt[1]);
-        if (err != cudaSuccess)
-        {
-            std::cout << "Error in calculating total elapsed time: " << cudaGetErrorString(err) << std::endl;
-            return -1;
-        }
-        for (auto &e : evt)
-        {
-            err = cudaEventDestroy(e);
-            if (err != cudaSuccess)
-            {
-                std::cout << "Error in deleting time measurement object: " << cudaGetErrorString(err) << std::endl;
-                return -1;
-            }
-        }
-        timeMeasurement.push_back(dt);
+        // compute magnetisation
+        m[iSweep] = std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize);
+    }
 
-        // averaging magnetisation
-        file << coupling << " " << std::accumulate(table.begin(), table.end(), 0.) / Square(spatialSize) << std::endl;
+    // write magnetisation results to file
+    // file
+    std::ofstream file;
+    file.open(fileName);
+    for (int im = 0; im < intTime; im++)
+    {
+        file << m[im] << std::endl;
     }
     file.close();
-
-    // print computation time
-    std::cout << "Mean parrallel computation time for a single table on GPU: "
-              << std::accumulate(timeMeasurement.begin(), timeMeasurement.end(), 0.) / static_cast<double>(timeMeasurement.size()) << " ms." << std::endl;
 }
